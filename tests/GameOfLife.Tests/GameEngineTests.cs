@@ -8,16 +8,9 @@ public class GameEngineTests
 
     [Fact]
     // specific test case found via google
-    public void Block_StillLife_DoesNotChange()
+    public void Block_Stable_DoesNotChange()
     {
-        // 2x2 square — canonical still life
-        bool[][] block =
-        [
-            [false, false, false, false],
-            [false, true,  true,  false],
-            [false, true,  true,  false],
-            [false, false, false, false],
-        ];
+        var block = new HashSet<(int, int)> { (1,1), (1,2), (2,1), (2,2) };
 
         var next = _engine.NextGeneration(block);
 
@@ -29,23 +22,8 @@ public class GameEngineTests
     public void Blinker_Oscillator_AlternatesCorrectly()
     {
         // should oscillate between vertical and horizontal line of 3 cells
-        bool[][] vertical =
-        [
-            [false, false, false, false, false],
-            [false, false, true,  false, false],
-            [false, false, true,  false, false],
-            [false, false, true,  false, false],
-            [false, false, false, false, false],
-        ];
-
-        bool[][] horizontal =
-        [
-            [false, false, false, false, false],
-            [false, false, false, false, false],
-            [false, true,  true,  true,  false],
-            [false, false, false, false, false],
-            [false, false, false, false, false],
-        ];
+        var vertical = new HashSet<(int, int)> { (0,1), (1,1), (2,1) };
+        var horizontal = new HashSet<(int, int)> { (1,0), (1,1), (1,2) };
 
         var gen1 = _engine.NextGeneration(vertical);
         Assert.Equal(horizontal, gen1);
@@ -57,159 +35,92 @@ public class GameEngineTests
     [Fact]
     public void EmptyBoard_RemainsEmpty()
     {
-        bool[][] empty =
-        [
-            [false, false, false],
-            [false, false, false],
-            [false, false, false],
-        ];
+        var next = _engine.NextGeneration([]);
 
-        var next = _engine.NextGeneration(empty);
-
-        Assert.Equal(empty, next);
+        Assert.Empty(next);
     }
 
     [Fact]
     public void SingleLiveCell_Dies_Underpopulation()
     {
-        bool[][] single =
-        [
-            [false, false, false],
-            [false, true,  false],
-            [false, false, false],
-        ];
+        var next = _engine.NextGeneration([(0, 0)]);
 
-        bool[][] expected =
-        [
-            [false, false, false],
-            [false, false, false],
-            [false, false, false],
-        ];
-
-        var next = _engine.NextGeneration(single);
-
-        Assert.Equal(expected, next);
+        Assert.Empty(next);
     }
 
     [Fact]
     public void LiveCell_WithTwoNeighbors_Survives()
     {
-        bool[][] cells =
-        [
-            [false, false, false, false],
-            [false, true,  true,  false],
-            [false, true,  false, false],
-            [false, false, false, false],
-        ];
+        var cells = new HashSet<(int, int)> { (0,0), (0,1), (1,0) };
 
         var next = _engine.NextGeneration(cells);
 
-        Assert.True(next[1][1]);
+        Assert.Contains((0, 0), next);
     }
 
     [Fact]
     public void LiveCell_WithFourOrMoreNeighbors_Dies_Overpopulation()
     {
-        bool[][] cells =
-        [
-            [true,  true,  true],
-            [true,  true,  false],
-            [false, false, false],
-        ];
+        // center cell (1,1) has 4 live neighbors
+        var cells = new HashSet<(int, int)> { (0,0), (0,1), (0,2), (1,0), (1,1) };
 
         var next = _engine.NextGeneration(cells);
 
-        Assert.False(next[1][1]);
+        Assert.DoesNotContain((1, 1), next);
     }
 
     [Fact]
     public void DeadCell_WithExactlyThreeNeighbors_BecomesAlive()
     {
-        bool[][] cells =
-        [
-            [true,  true,  false],
-            [true,  false, false],
-            [false, false, false],
-        ];
+        var cells = new HashSet<(int, int)> { (0,0), (0,1), (1,0) };
 
         var next = _engine.NextGeneration(cells);
 
-        Assert.True(next[1][1]); 
+        Assert.Contains((1, 1), next); // (1,1) has 3 live neighbors — born
     }
 
     [Fact]
     public void DeadCell_WithTwoNeighbors_RemainsDeadAsBornRequiresThree()
     {
-        bool[][] cells =
-        [
-            [true,  false, false],
-            [true,  false, false],
-            [false, false, false],
-        ];
+        var cells = new HashSet<(int, int)> { (0,0), (1,0) };
 
         var next = _engine.NextGeneration(cells);
 
-        Assert.False(next[1][1]);
+        Assert.DoesNotContain((0, 1), next);
     }
 
     [Fact]
-    public void Serialize_SameBoardTwice_ReturnsSameHash()
+    public void Serialize_SameBoardTwice_ReturnsSameResult()
     {
-        bool[][] cells = [[true, false], [false, true]];
+        var cells = new HashSet<(int, int)> { (0,0), (1,1) };
 
         Assert.Equal(_engine.Serialize(cells), _engine.Serialize(cells));
     }
 
     [Fact]
-    public void Serialize_DifferentBoards_ReturnDifferentHashes()
+    public void Serialize_DifferentBoards_ReturnDifferentResults()
     {
-        bool[][] cells1 = [[true, false], [false, true]];
-        bool[][] cells2 = [[false, true], [true, false]];
+        var cells1 = new HashSet<(int, int)> { (0,0), (1,1) };
+        var cells2 = new HashSet<(int, int)> { (0,1), (1,0) };
 
         Assert.NotEqual(_engine.Serialize(cells1), _engine.Serialize(cells2));
     }
 
     [Fact]
-    public void SingleRowBoard_ProcessedCorrectly()
+    public void Glider_TravelsDiagonally()
     {
-        bool[][] cells = [[true, true, true]];
+        var glider = new HashSet<(int, int)> { (0,1), (1,2), (2,0), (2,1), (2,2) };
 
-        var next = _engine.NextGeneration(cells);
+        // advance 4 generations — glider completes one cycle, shifted one step diagonally
+        var cells = glider;
+        for (int i = 0; i < 4; i++)
+            cells = _engine.NextGeneration(cells);
 
-        Assert.False(next[0][0]);
-        Assert.True(next[0][1]);
-        Assert.False(next[0][2]);
-    }
-
-    [Fact]
-    public void SingleColumnBoard_ProcessedCorrectly()
-    {
-        bool[][] cells = [[true], [true], [true]];
-
-        var next = _engine.NextGeneration(cells);
-
-        Assert.False(next[0][0]);
-        Assert.True(next[1][0]);
-        Assert.False(next[2][0]);
-    }
-
-    [Fact]
-    public void SingleCellBoard_LiveCell_Dies_Underpopulation()
-    {
-        bool[][] cells = [[true]];
-
-        var next = _engine.NextGeneration(cells);
-
-        Assert.False(next[0][0]);
-    }
-
-    [Fact]
-    public void SingleCellBoard_DeadCell_RemainsDeadAsBornRequiresThree()
-    {
-        bool[][] cells = [[false]];
-
-        var next = _engine.NextGeneration(cells);
-
-        Assert.False(next[0][0]);
+        Assert.Equal(5, cells.Count);
+        Assert.Contains((1,2), cells);
+        Assert.Contains((2,3), cells);
+        Assert.Contains((3,1), cells);
+        Assert.Contains((3,2), cells);
+        Assert.Contains((3,3), cells);
     }
 }

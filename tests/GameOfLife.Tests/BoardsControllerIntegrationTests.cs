@@ -11,7 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GameOfLife.Tests;
 
-// use IClassFixture to ensure an isolated DB per test run, but reuse the DB and app setup for all tests in this class
 public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web);
@@ -35,13 +34,12 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
 
             builder.ConfigureServices(services =>
             {
-                // use a unique DB name per CreateClient() call so each client gets an isolated database
-                // use in-memory DB to avoid external dependencies
                 var descriptor = services.SingleOrDefault(
                     d => d.ServiceType == typeof(DbContextOptions<GameOfLifeDbContext>));
                 if (descriptor is not null)
                     services.Remove(descriptor);
 
+                // use a unique DB name per CreateClient() call so each client gets an isolated database
                 var dbName = $"IntegrationTest_{Guid.NewGuid()}";
                 services.AddDbContext<GameOfLifeDbContext>(options =>
                     options.UseInMemoryDatabase(dbName));
@@ -52,7 +50,7 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
     [Fact]
     public async Task CreateBoard_ValidRequest_Returns201WithBoardId()
     {
-        var request = new CreateBoardRequest { Cells = [[0, 1], [1, 0]] };
+        var request = new CreateBoardRequest { Cells = [[1,2],[2,2],[3,2]] };
 
         var response = await _client.PostAsJsonAsync("/api/boards", request);
 
@@ -60,24 +58,14 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
         var body = await response.Content.ReadFromJsonAsync<BoardResponse>(WebOptions);
         Assert.NotNull(body);
         Assert.NotEqual(Guid.Empty, body.Id);
-        Assert.Equal(2, body.Cells.Length);
+        Assert.Equal(3, body.Cells.Length);
     }
 
     [Fact]
-    public async Task CreateBoard_EmptyCells_Returns400()
+    public async Task CreateBoard_InvalidPair_Returns400()
     {
-        var request = new CreateBoardRequest { Cells = [] };
-
-        var response = await _client.PostAsJsonAsync("/api/boards", request);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task CreateBoard_JaggedGrid_Returns400()
-    {
-        // Manually construct JSON to bypass C# type system
-        var json = """{"cells":[[1,0],[1]]}""";
+        // cell with 1 elements instead of 2
+        var json = """{"cells":[[1]]}""";
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/boards", content);
@@ -97,17 +85,7 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
     public async Task AdvanceNext_KnownId_Returns200WithNextGeneration()
     {
         // Vertical blinker
-        var createRequest = new CreateBoardRequest
-        {
-            Cells =
-            [
-                [0, 0, 0, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 0, 0, 0],
-            ]
-        };
+        var createRequest = new CreateBoardRequest { Cells = [[1,2],[2,2],[3,2]] };
         var created = await PostBoardAsync(createRequest);
 
         var response = await _client.PostAsync($"/api/boards/{created.Id}/next", null);
@@ -115,42 +93,34 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var next = await response.Content.ReadFromJsonAsync<BoardResponse>(WebOptions);
         Assert.NotNull(next);
-        // Blinker should have flipped to horizontal
-        Assert.Equal(1, next.Cells[2][1]);
-        Assert.Equal(1, next.Cells[2][2]);
-        Assert.Equal(1, next.Cells[2][3]);
+        // should flip to horizontal blinker
+        Assert.Equal(3, next.Cells.Length);
+        Assert.Contains(next.Cells, c => c[0] == 2 && c[1] == 1);
+        Assert.Contains(next.Cells, c => c[0] == 2 && c[1] == 2);
+        Assert.Contains(next.Cells, c => c[0] == 2 && c[1] == 3);
     }
 
     [Fact]
     public async Task AdvanceNext_MutatesStoredState()
     {
-        var createRequest = new CreateBoardRequest
-        {
-            Cells =
-            [
-                [0, 0, 0, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 0, 0, 0],
-            ]
-        };
+        var createRequest = new CreateBoardRequest { Cells = [[1,2],[2,2],[3,2]] };
         var created = await PostBoardAsync(createRequest);
 
+        // two advances should return to original orientation
         await _client.PostAsync($"/api/boards/{created.Id}/next", null);
         var secondResponse = await _client.PostAsync($"/api/boards/{created.Id}/next", null);
         var secondState = await secondResponse.Content.ReadFromJsonAsync<BoardResponse>(WebOptions);
 
         Assert.NotNull(secondState);
-        Assert.Equal(1, secondState.Cells[1][2]);
-        Assert.Equal(1, secondState.Cells[2][2]);
-        Assert.Equal(1, secondState.Cells[3][2]);
+        Assert.Contains(secondState.Cells, c => c[0] == 1 && c[1] == 2);
+        Assert.Contains(secondState.Cells, c => c[0] == 2 && c[1] == 2);
+        Assert.Contains(secondState.Cells, c => c[0] == 3 && c[1] == 2);
     }
 
     [Fact]
     public async Task AdvanceN_ValidN_Returns200()
     {
-        var created = await PostBoardAsync(new CreateBoardRequest { Cells = [[1, 0], [0, 1]] });
+        var created = await PostBoardAsync(new CreateBoardRequest { Cells = [[0,0],[0,1],[1,0],[1,1]] });
 
         var response = await _client.PostAsync($"/api/boards/{created.Id}/next/3", null);
 
@@ -160,7 +130,7 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
     [Fact]
     public async Task AdvanceN_NIsZero_Returns400()
     {
-        var created = await PostBoardAsync(new CreateBoardRequest { Cells = [[1, 0], [0, 1]] });
+        var created = await PostBoardAsync(new CreateBoardRequest { Cells = [[0,0],[0,1],[1,0],[1,1]] });
 
         var response = await _client.PostAsync($"/api/boards/{created.Id}/next/0", null);
 
@@ -182,8 +152,7 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
         {
             ["GameOfLife:MaxGenerations"] = "2"
         });
-        var createRequest = new CreateBoardRequest { Cells = [[1, 0], [0, 1]] };
-        var response = await client.PostAsJsonAsync("/api/boards", createRequest);
+        var response = await client.PostAsJsonAsync("/api/boards", new CreateBoardRequest { Cells = [[0,0]] });
         response.EnsureSuccessStatusCode();
         var created = (await response.Content.ReadFromJsonAsync<BoardResponse>(WebOptions))!;
 
@@ -195,16 +164,7 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
     [Fact]
     public async Task AdvanceToFinal_Block_ReturnsStableBlock()
     {
-        var createRequest = new CreateBoardRequest
-        {
-            Cells =
-            [
-                [0, 0, 0, 0],
-                [0, 1, 1, 0],
-                [0, 1, 1, 0],
-                [0, 0, 0, 0],
-            ]
-        };
+        var createRequest = new CreateBoardRequest { Cells = [[1,1],[1,2],[2,1],[2,2]] };
         var created = await PostBoardAsync(createRequest);
 
         var response = await _client.PostAsync($"/api/boards/{created.Id}/final", null);
@@ -212,10 +172,11 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var final = await response.Content.ReadFromJsonAsync<BoardResponse>(WebOptions);
         Assert.NotNull(final);
-        Assert.Equal(1, final.Cells[1][1]);
-        Assert.Equal(1, final.Cells[1][2]);
-        Assert.Equal(1, final.Cells[2][1]);
-        Assert.Equal(1, final.Cells[2][2]);
+        Assert.Equal(4, final.Cells.Length);
+        Assert.Contains(final.Cells, c => c[0] == 1 && c[1] == 1);
+        Assert.Contains(final.Cells, c => c[0] == 1 && c[1] == 2);
+        Assert.Contains(final.Cells, c => c[0] == 2 && c[1] == 1);
+        Assert.Contains(final.Cells, c => c[0] == 2 && c[1] == 2);
     }
 
     [Fact]
@@ -233,18 +194,7 @@ public class BoardsControllerIntegrationTests : IClassFixture<WebApplicationFact
         {
             ["GameOfLife:MaxFinalStateIterations"] = "5"
         });
-        var createRequest = new CreateBoardRequest
-        {
-            Cells =
-            [
-                [0, 0, 0, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 1, 0, 0],
-                [0, 0, 0, 0, 0],
-            ]
-        };
-        var response = await client.PostAsJsonAsync("/api/boards", createRequest);
+        var response = await client.PostAsJsonAsync("/api/boards", new CreateBoardRequest { Cells = [[1,2],[2,2],[3,2]] });
         response.EnsureSuccessStatusCode();
         var created = (await response.Content.ReadFromJsonAsync<BoardResponse>(WebOptions))!;
 

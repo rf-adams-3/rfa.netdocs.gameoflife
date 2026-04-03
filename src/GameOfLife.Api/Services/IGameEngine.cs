@@ -2,6 +2,6 @@ namespace GameOfLife.Api.Services;
 
 public interface IGameEngine
 {
-    bool[][] NextGeneration(bool[][] cells);
-    string Serialize(bool[][] cells);
+    HashSet<(int row, int col)> NextGeneration(HashSet<(int row, int col)> liveCells);
+    string Serialize(HashSet<(int row, int col)> liveCells);
 }

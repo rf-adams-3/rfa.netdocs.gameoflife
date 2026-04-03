@@ -3,5 +3,5 @@
 * Track the number of iterations, and initial board state, for display/auditing
     * Also allows us to do "set the board state to iteration X" instead of "advance X iterations"
 * Use custom exceptions and middleware for changing HTTP response code, instead of keeping it in controller methods
-* Switch validation to FluentValidation or similar library
 * Log to external log store (splunk, elk, etc)
+* Cache the deserialized cells in Board in a backing field so the JSON is only parsed once per load rather than on every access
