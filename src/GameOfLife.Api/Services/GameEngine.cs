@@ -4,43 +4,38 @@ namespace GameOfLife.Api.Services;
 
 public class GameEngine : IGameEngine
 {
-    public bool[][] NextGeneration(bool[][] cells)
+    public HashSet<(int row, int col)> NextGeneration(HashSet<(int row, int col)> liveCells)
     {
-        var rowCount = cells.Length;
-        var colCount = cells[0].Length;
-        var next = new bool[rowCount][];
+        var candidates = liveCells
+            .SelectMany(GetNeighbors) // find all potential cells that could change state
+            .Concat(liveCells) // include currently live cells to ensure they are evaluated
+            .ToHashSet();
 
-        for (var row = 0; row < rowCount; row++)
+        // check each candidate for change cell
+        return candidates.Where(cell =>
         {
-            next[row] = new bool[colCount];
-            for (var col = 0; col < colCount; col++)
-            {
-                var liveNeighbors = CountLiveNeighbors(cells, row, col, rowCount, colCount);
-                next[row][col] = cells[row][col]
-                    ? liveNeighbors == 2 || liveNeighbors == 3  // survival
-                    : liveNeighbors == 3;                        // birth
-            }
-        }
-
-        return next;
+            int neighborCount = GetNeighbors(cell).Count(l => liveCells.Contains(l)); // get count of neighbors for cell under evaluation
+            return liveCells.Contains(cell)
+                ? neighborCount == 2 || neighborCount == 3  // survival or death
+                : neighborCount == 3;                        // birth or death
+        }).ToHashSet();
     }
 
-    private static int CountLiveNeighbors(bool[][] cells, int row, int col, int rowCount, int colCount)
+    // Get the 8 neighboring cells for a given cell
+    private static IEnumerable<(int row, int col)> GetNeighbors((int row, int col) cell)
     {
-        var count = 0;
-        for (var rowOffset = -1; rowOffset <= 1; rowOffset++)
-        for (var colOffset = -1; colOffset <= 1; colOffset++)
+        for (int rowOffset = -1; rowOffset <= 1; rowOffset++)
+        for (int colOffset = -1; colOffset <= 1; colOffset++)
         {
             if (rowOffset == 0 && colOffset == 0) continue;
-            var neighborRow = row + rowOffset;
-            var neighborCol = col + colOffset;
-
-            // check if neighbor is alive, and also within bounds of the board
-            if (neighborRow >= 0 && neighborRow < rowCount && neighborCol >= 0 && neighborCol < colCount && cells[neighborRow][neighborCol])
-                count++;
+            yield return (cell.row + rowOffset, cell.col + colOffset);
         }
-        return count;
     }
 
-    public string Serialize(bool[][] cells) => JsonSerializer.Serialize(cells);
+    // Serialize the set of live cells to a JSON string
+    public string Serialize(HashSet<(int row, int col)> liveCells) =>
+        JsonSerializer.Serialize(
+            liveCells.OrderBy(c => c.row).ThenBy(c => c.col)
+                     .Select(c => new[] { c.row, c.col })
+                     .ToArray());
 }

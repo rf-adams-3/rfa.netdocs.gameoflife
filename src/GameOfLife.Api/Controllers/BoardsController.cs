@@ -24,7 +24,7 @@ public class BoardsController : ControllerBase
     {
         try
         {
-            var cells = ToBoolJagged(request.Cells);
+            var cells = ToCells(request.Cells);
             var board = await _gameService.CreateBoardAsync(cells, cancellationToken);
             return StatusCode(StatusCodes.Status201Created, ToResponse(board));
         }
@@ -87,9 +87,17 @@ public class BoardsController : ControllerBase
         }
     }
 
-    private static bool[][] ToBoolJagged(int[][] cells) =>
-        cells.Select(row => row.Select(cell => cell != 0).ToArray()).ToArray();
+    // Enforce that each cell is in the format [row, col] and convert to HashSet<(int row, int col)>
+    private static HashSet<(int row, int col)> ToCells(int[][] coordsLiveCells)
+    {
+        if (coordsLiveCells.Any(p => p.Length != 2))
+            throw new ArgumentException("Each cell must be specified as [row, col].");
+        return coordsLiveCells.Select(p => (p[0], p[1])).ToHashSet();
+    }
 
     private static BoardResponse ToResponse(Board board) =>
-        new(board.Id, board.Cells.Select(row => row.Select(c => c ? 1 : 0).ToArray()).ToArray(), board.UpdatedAt);
+        new(board.Id,
+            board.Cells.OrderBy(c => c.row).ThenBy(c => c.col)
+                .Select(c => new[] { c.row, c.col }).ToArray(),
+            board.UpdatedAt);
 }

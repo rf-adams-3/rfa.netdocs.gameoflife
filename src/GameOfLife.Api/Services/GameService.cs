@@ -19,10 +19,8 @@ public class GameService : IGameService
         _logger = logger;
     }
 
-    public async Task<Board> CreateBoardAsync(bool[][] cells, CancellationToken cancellationToken = default)
+    public async Task<Board> CreateBoardAsync(HashSet<(int row, int col)> cells, CancellationToken cancellationToken = default)
     {
-        ValidateGrid(cells);
-
         var board = new Board
         {
             Id = Guid.NewGuid(),
@@ -32,7 +30,7 @@ public class GameService : IGameService
         board.Cells = cells;
 
         await _repository.AddAsync(board, cancellationToken);
-        _logger.LogInformation("Board {BoardId} created ({Rows}x{Cols})", board.Id, cells.Length, cells[0].Length);
+        _logger.LogInformation("Board {BoardId} created ({CellCount} live cells)", board.Id, cells.Count);
         return board;
     }
 
@@ -104,31 +102,5 @@ public class GameService : IGameService
         _logger.LogWarning("Board {BoardId} did not reach a stable state within {MaxIterations} iterations", id, _settings.MaxFinalStateIterations);
         throw new InvalidOperationException(
             $"A stable state was not reached within {_settings.MaxFinalStateIterations} iterations.");
-    }
-
-    private void ValidateGrid(bool[][] cells)
-    {
-        if (cells.Length == 0)
-            throw new ArgumentException("The board must have at least one row.");
-
-        if (cells.Length > _settings.MaxGridRows)
-            throw new ArgumentException(
-                $"The board cannot exceed {_settings.MaxGridRows} rows, but {cells.Length} were provided.");
-
-        int cols = cells[0].Length;
-
-        if (cols == 0)
-            throw new ArgumentException("The board must have at least one column.");
-
-        if (cols > _settings.MaxGridCols)
-            throw new ArgumentException(
-                $"The board cannot exceed {_settings.MaxGridCols} columns, but {cols} were provided.");
-
-        for (int r = 1; r < cells.Length; r++)
-        {
-            if (cells[r].Length != cols)
-                throw new ArgumentException(
-                    $"All rows must have the same number of columns. Row 0 has {cols} columns, but row {r} has {cells[r].Length}.");
-        }
     }
 }

@@ -39,24 +39,20 @@ Navigate to **http://localhost:5244/scalar/v1** to explore and try all endpoints
 POST /api/boards
 {
   "cells": [
-    [0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0],
-    [0, 0, 1, 0, 0],
-    [0, 0, 1, 0, 0],
-    [0, 0, 0, 0, 0]
+    [1, 2],
+    [2, 2],
+    [3, 2]
   ]
 }
 ```
 
-Cell values: `0` = dead, `1` = alive. All rows must have the same length.
-
-Response includes a `id` field to use in following requests.
+Each cell is a `[row, col]` coordinate pair. Only live cells are included. The grid is infinite. Response includes an `id` field to use in subsequent requests, and a `cells` array in the same format.
 
 ### Error responses
 
 | Status | Meaning |
 |--------|---------|
-| `400` | Invalid board (empty, non-rectangular, size exceeds configured max rows/columns) |
+| `400` | Invalid input (malformed coordinate pairs, N out of range) |
 | `404` | Board ID not found |
 | `422` | Final state not reached within the maximum number of iterations |
 
@@ -66,8 +62,6 @@ Limits are configurable in `appsettings.json`:
 
 ```json
 "GameOfLife": {
-  "MaxGridRows": 1000,
-  "MaxGridCols": 1000,
   "MaxGenerations": 10000,
   "MaxFinalStateIterations": 10000
 }

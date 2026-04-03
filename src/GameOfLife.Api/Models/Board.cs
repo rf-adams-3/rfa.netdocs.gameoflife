@@ -11,9 +11,14 @@ public class Board
     public DateTime UpdatedAt { get; set; }
 
     [NotMapped]
-    public bool[][] Cells
+    public HashSet<(int row, int col)> Cells
     {
-        get => JsonSerializer.Deserialize<bool[][]>(CellsJson)!;
-        set => CellsJson = JsonSerializer.Serialize(value);
+        get => JsonSerializer.Deserialize<int[][]>(CellsJson)!
+            .Select(p => (p[0], p[1]))
+            .ToHashSet();
+        set => CellsJson = JsonSerializer.Serialize(
+            value.OrderBy(c => c.row).ThenBy(c => c.col)
+                 .Select(c => new[] { c.row, c.col })
+                 .ToArray());
     }
 }

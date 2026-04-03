@@ -16,10 +16,17 @@ public class GameServiceTests
     private GameService CreateService() =>
         new(_repoMock.Object, _engineMock.Object, Options.Create(_settings), NullLogger<GameService>.Instance);
 
+    private static Board BoardWithCells(Guid id, HashSet<(int, int)> cells)
+    {
+        var board = new Board { Id = id };
+        board.Cells = cells;
+        return board;
+    }
+
     [Fact]
     public async Task CreateBoardAsync_ValidCells_PersistsAndReturnsBoardWithId()
     {
-        bool[][] cells = [[true, false], [false, true]];
+        HashSet<(int, int)> cells = [(0, 0), (1, 1)];
         _repoMock
             .Setup(r => r.AddAsync(It.IsAny<Board>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Board b, CancellationToken _) => b);
@@ -28,48 +35,6 @@ public class GameServiceTests
 
         Assert.NotEqual(Guid.Empty, result.Id);
         _repoMock.Verify(r => r.AddAsync(It.IsAny<Board>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task CreateBoardAsync_EmptyRows_ThrowsArgumentException()
-    {
-        await Assert.ThrowsAsync<ArgumentException>(
-            () => CreateService().CreateBoardAsync([]));
-    }
-
-    [Fact]
-    public async Task CreateBoardAsync_EmptyColumns_ThrowsArgumentException()
-    {
-        await Assert.ThrowsAsync<ArgumentException>(
-            () => CreateService().CreateBoardAsync([[]]));
-    }
-
-    [Fact]
-    public async Task CreateBoardAsync_NonUniformGrid_ThrowsArgumentException()
-    {
-        bool[][] jagged = [[true, false], [true]];
-        await Assert.ThrowsAsync<ArgumentException>(
-            () => CreateService().CreateBoardAsync(jagged));
-    }
-
-    [Fact]
-    public async Task CreateBoardAsync_ExceedsMaxRows_ThrowsArgumentException()
-    {
-        _settings.MaxGridRows = 2;
-        bool[][] oversized = [[true], [false], [true]]; // 3 rows, limit is 2
-
-        await Assert.ThrowsAsync<ArgumentException>(
-            () => CreateService().CreateBoardAsync(oversized));
-    }
-
-    [Fact]
-    public async Task CreateBoardAsync_ExceedsMaxCols_ThrowsArgumentException()
-    {
-        _settings.MaxGridCols = 2;
-        bool[][] oversized = [[true, false, true]]; // 3 cols, limit is 2
-
-        await Assert.ThrowsAsync<ArgumentException>(
-            () => CreateService().CreateBoardAsync(oversized));
     }
 
     [Fact]
@@ -88,13 +53,12 @@ public class GameServiceTests
     public async Task AdvanceAsync_ExistingId_AdvancesAndPersistsBoard()
     {
         var id = Guid.NewGuid();
-        bool[][] initial = [[true, false], [false, true]];
-        bool[][] next = [[false, false], [false, false]];
-        var board = new Board { Id = id };
-        board.Cells = initial;
+        HashSet<(int, int)> initial = [(0, 0)];
+        HashSet<(int, int)> next = [(0, 1)];
+        var board = BoardWithCells(id, initial);
 
         _repoMock.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
-        _engineMock.Setup(e => e.NextGeneration(It.IsAny<bool[][]>())).Returns(next);
+        _engineMock.Setup(e => e.NextGeneration(It.IsAny<HashSet<(int, int)>>())).Returns(next);
 
         var result = await CreateService().AdvanceAsync(id);
 
@@ -142,16 +106,15 @@ public class GameServiceTests
     public async Task AdvanceNStatesAsync_ValidN_CallsEngineNTimes()
     {
         var id = Guid.NewGuid();
-        bool[][] cells = [[true, false]];
-        var board = new Board { Id = id };
-        board.Cells = cells;
+        HashSet<(int, int)> cells = [(0, 0)];
+        var board = BoardWithCells(id, cells);
 
         _repoMock.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
-        _engineMock.Setup(e => e.NextGeneration(It.IsAny<bool[][]>())).Returns(cells);
+        _engineMock.Setup(e => e.NextGeneration(It.IsAny<HashSet<(int, int)>>())).Returns(cells);
 
         await CreateService().AdvanceNStatesAsync(id, 5);
 
-        _engineMock.Verify(e => e.NextGeneration(It.IsAny<bool[][]>()), Times.Exactly(5));
+        _engineMock.Verify(e => e.NextGeneration(It.IsAny<HashSet<(int, int)>>()), Times.Exactly(5));
         _repoMock.Verify(r => r.UpdateAsync(board, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -171,13 +134,12 @@ public class GameServiceTests
     public async Task AdvanceToFinalAsync_StillLife_DetectsStableStateAndPersists()
     {
         var id = Guid.NewGuid();
-        bool[][] stable = [[true, true], [true, true]];
-        var board = new Board { Id = id };
-        board.Cells = stable;
+        HashSet<(int, int)> stable = [(1,1), (1,2), (2,1), (2,2)];
+        var board = BoardWithCells(id, stable);
 
         _repoMock.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
-        _engineMock.Setup(e => e.NextGeneration(It.IsAny<bool[][]>())).Returns(stable);
-        _engineMock.Setup(e => e.Serialize(It.IsAny<bool[][]>())).Returns("H0");
+        _engineMock.Setup(e => e.NextGeneration(It.IsAny<HashSet<(int, int)>>())).Returns(stable);
+        _engineMock.Setup(e => e.Serialize(It.IsAny<HashSet<(int, int)>>())).Returns("H0");
 
         var result = await CreateService().AdvanceToFinalAsync(id);
 
@@ -192,15 +154,14 @@ public class GameServiceTests
         _settings.MaxFinalStateIterations = 1;
 
         var id = Guid.NewGuid();
-        bool[][] cells = [[true, false]];
-        var board = new Board { Id = id };
-        board.Cells = cells;
+        HashSet<(int, int)> cells = [(0, 0)];
+        var board = BoardWithCells(id, cells);
 
         _repoMock.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
-        _engineMock.Setup(e => e.NextGeneration(It.IsAny<bool[][]>())).Returns(cells);
+        _engineMock.Setup(e => e.NextGeneration(It.IsAny<HashSet<(int, int)>>())).Returns(cells);
 
         int counter = 0;
-        _engineMock.Setup(e => e.Serialize(It.IsAny<bool[][]>()))
+        _engineMock.Setup(e => e.Serialize(It.IsAny<HashSet<(int, int)>>()))
             .Returns(() => $"H{counter++}");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -214,20 +175,19 @@ public class GameServiceTests
         _settings.MaxFinalStateIterations = 10;
 
         var id = Guid.NewGuid();
-        bool[][] stateA = [[true, false]];
-        bool[][] stateB = [[false, true]];
-        var board = new Board { Id = id };
-        board.Cells = stateA;
+        HashSet<(int, int)> stateA = [(0, 0)];
+        HashSet<(int, int)> stateB = [(0, 1)];
+        var board = BoardWithCells(id, stateA);
 
         _repoMock.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
 
-        _engineMock.SetupSequence(e => e.NextGeneration(It.IsAny<bool[][]>()))
+        _engineMock.SetupSequence(e => e.NextGeneration(It.IsAny<HashSet<(int, int)>>()))
             .Returns(stateB).Returns(stateA).Returns(stateB).Returns(stateA)
             .Returns(stateB).Returns(stateA).Returns(stateB).Returns(stateA)
             .Returns(stateB).Returns(stateA);
 
         int counter = 0;
-        _engineMock.Setup(e => e.Serialize(It.IsAny<bool[][]>()))
+        _engineMock.Setup(e => e.Serialize(It.IsAny<HashSet<(int, int)>>()))
             .Returns(() => $"H{counter++}");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
